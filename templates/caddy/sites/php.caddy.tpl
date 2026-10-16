@@ -1,0 +1,10 @@
+# Managed by neo — generic PHP site (PHP-FPM)
+{{SERVER_NAMES_COMMA}} {
+    root * {{ROOT}}
+    encode zstd gzip
+    import security_headers
+{{HSTS_LINE}}
+    import hide_dotfiles
+    php_fastcgi unix/{{PHP_SOCKET_PATH}}
+    file_server
+}

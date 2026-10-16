@@ -1,0 +1,22 @@
+# Managed by neo — reverse proxy to an app on {{UPSTREAM}}
+# Needs: proxy proxy_http proxy_wstunnel rewrite headers (enabled by neo)
+<VirtualHost *:80>
+    ServerName {{DOMAIN}}
+{{SERVER_ALIAS_LINE}}
+    ErrorLog  ${APACHE_LOG_DIR}/{{DOMAIN}}.error.log
+    CustomLog ${APACHE_LOG_DIR}/{{DOMAIN}}.access.log combined
+
+    ProxyPreserveHost On
+    ProxyRequests Off
+    # Evaluated per request, so the copy certbot makes for the HTTPS vhost sends "https" / 443
+    RequestHeader set X-Forwarded-Proto expr=%{REQUEST_SCHEME}
+    RequestHeader set X-Forwarded-Port expr=%{SERVER_PORT}
+
+    # WebSocket upgrade
+    RewriteEngine On
+    RewriteCond %{HTTP:Upgrade} =websocket [NC]
+    RewriteRule /(.*) ws://{{UPSTREAM}}/$1 [P,L]
+
+    ProxyPass        / http://{{UPSTREAM}}/
+    ProxyPassReverse / http://{{UPSTREAM}}/
+</VirtualHost>

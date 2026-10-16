@@ -1,0 +1,9 @@
+# Dokploy preset: production PaaS stack on Docker Swarm
+system_update
+swap
+create_user
+ssh_harden
+ufw
+fail2ban
+docker_runtime
+dokploy

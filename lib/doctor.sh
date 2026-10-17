@@ -152,3 +152,73 @@ neo_doctor() {
     return 1
   fi
 }
+
+neo_status() {
+  printf '\033[1;36m=== 🐱 Neo Server Status ===\033[0m\n'
+
+  local up
+  up=$(uptime -p 2>/dev/null | sed 's/up //' || uptime 2>/dev/null | awk -F',  ' '{print $1}')
+  printf '  \033[1mUptime:\033[0m   %s\n' "${up:-unknown}"
+
+  if [[ -r /proc/loadavg ]]; then
+    printf '  \033[1mLoad:\033[0m     %s\n' "$(cut -d' ' -f1-3 /proc/loadavg)"
+  elif command -v sysctl >/dev/null 2>&1; then
+    printf '  \033[1mLoad:\033[0m     %s\n' "$(sysctl -n vm.loadavg 2>/dev/null | awk '{print $2,$3,$4}' || echo "N/A")"
+  fi
+
+  if command -v free >/dev/null 2>&1; then
+    local mem swap
+    mem=$(free -h 2>/dev/null | awk '/^Mem:/{print $3 " / " $2}')
+    swap=$(free -h 2>/dev/null | awk '/^Swap:/{print $3 " / " $2}')
+    [[ -n $mem ]] && printf '  \033[1mMemory:\033[0m   %s\n' "$mem"
+    [[ -n $swap ]] && printf '  \033[1mSwap:\033[0m     %s\n' "$swap"
+  fi
+
+  local disk
+  disk=$(df -h / 2>/dev/null | awk 'NR==2{print $3 " / " $2 " (" $5 ")"}')
+  [[ -n $disk ]] && printf '  \033[1mDisk /:\033[0m   %s\n' "$disk"
+
+  printf '\n\033[1;36m=== Services ===\033[0m\n'
+  local any_svc=0
+  for svc in ssh sshd fail2ban ufw firewalld nginx apache2 httpd caddy php-fpm postgresql mysql mariadb \
+             redis-server redis docker podman.socket unattended-upgrades dnf-automatic.timer neo-backup.timer; do
+    systemctl cat "$svc" >/dev/null 2>&1 || continue
+    any_svc=1
+    if systemctl is-active --quiet "$svc" 2>/dev/null; then
+      printf '  \033[1;32m✓\033[0m %s\n' "$svc"
+    elif systemctl is-enabled --quiet "$svc" 2>/dev/null; then
+      printf '  \033[1;31m✗\033[0m %s (\033[33m%s\033[0m)\n' "$svc" "$(systemctl is-active "$svc" 2>/dev/null || echo inactive)"
+    fi
+  done
+  for unit in $(systemctl list-units --type=service --all --no-legend 'php*-fpm.service' 2>/dev/null | awk '{print $1}' | grep -E '^php[0-9.]+-fpm' || true); do
+    any_svc=1
+    if systemctl is-active --quiet "$unit" 2>/dev/null; then
+      printf '  \033[1;32m✓\033[0m %s\n' "$unit"
+    else
+      printf '  \033[1;31m✗\033[0m %s\n' "$unit"
+    fi
+  done
+  (( any_svc == 0 )) && printf '  \033[2mNo managed services installed yet\033[0m\n'
+
+  printf '\n\033[1;36m=== Backups ===\033[0m\n'
+  local bdir=${BACKUP_DIR:-/var/backups/neo}/db
+  if [[ -d $bdir ]]; then
+    local count
+    count=$(find "$bdir" -name '*.sql.gz' 2>/dev/null | wc -l)
+    printf '  Database backups: %d files\n' "$count"
+    find "$bdir" -name '*.sql.gz' -exec stat -c '%y %s %n' {} + 2>/dev/null | sort -r | head -n 3 | awk '{print "    " $1, $2, "(" $4 " bytes)"}' || true
+  else
+    printf '  \033[2mNo backup directory yet\033[0m\n'
+  fi
+
+  printf '\n\033[1;36m=== Security Events (24h) ===\033[0m\n'
+  if command -v journalctl >/dev/null 2>&1; then
+    local fails
+    fails=$(journalctl -u ssh -u sshd --since "1 day ago" -o cat 2>/dev/null | grep -E "Failed password|Invalid user" 2>/dev/null | wc -l)
+    fails=${fails//[[:space:]]/}
+    printf '  Failed SSH attempts: %s\n' "${fails:-0}"
+  else
+    printf '  \033[2mjournalctl not available\033[0m\n'
+  fi
+  return 0
+}

@@ -97,7 +97,9 @@ prompt_mysql() { return 0; }
 
 run_mysql() {
   local share=$(_db_share) root_pass
-  pkg_install mysql-server
+  if ! pkg_install mysql-server 2>/dev/null; then
+    pkg_install mariadb-server || return 1
+  fi
 
   root_pass=$(_rand_pass)
   CFG[mysql_root_saved]=""

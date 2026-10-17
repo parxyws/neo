@@ -147,7 +147,16 @@ pkg_install() {
   if is_rhel_family; then
     run dnf "${DNF_OPTS[@]}" -y install "$@"
   else
-    run env DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTS[@]}" -y install "$@"
+    # Ensure apt package list cache exists before installing
+    if (( ! DRY_RUN )) && [[ ! -d /var/lib/apt/lists || -z "$(ls -A /var/lib/apt/lists 2>/dev/null | grep -v 'lock\|partial' || true)" ]]; then
+      pkg_update
+    fi
+    if ! run env DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTS[@]}" -y install "$@"; then
+      (( DRY_RUN )) && return 0
+      # Stale cache or missing package index: refresh lists and retry once
+      pkg_update
+      run env DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTS[@]}" -y install "$@"
+    fi
   fi
 }
 

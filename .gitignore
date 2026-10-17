@@ -7,6 +7,9 @@
 ehthumbs.db
 Thumbs.db
 
+# Skills and local AI agents
+.agents/
+
 # Editor & IDE directories
 .vscode/
 .idea/

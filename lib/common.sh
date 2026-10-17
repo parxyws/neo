@@ -2,6 +2,9 @@
 # shellcheck shell=bash
 # Common helpers: logging, command runner, file writer, validators, registry.
 
+: "${LC_ALL:=C.UTF-8}"
+: "${LANG:=C.UTF-8}"
+export LC_ALL LANG
 : "${DRY_RUN:=0}"
 : "${ASSUME_YES:=0}"
 BACKUP_DIR=/var/backups/neo

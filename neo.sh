@@ -4,6 +4,9 @@
 # Usage:  sudo neo [command] [options]      (see --help)
 # =============================================================================
 set -uo pipefail
+: "${LC_ALL:=C.UTF-8}"
+: "${LANG:=C.UTF-8}"
+export LC_ALL LANG
 
 VERSION="1.0.0"
 
@@ -331,43 +334,264 @@ check_environment() {
   ui_yesno "$title" "$text" no || quit_cancel
 }
 
-show_help() {
-  local id text=""
-  for id in "${FEATURE_IDS[@]}"; do
-    text+="$(t "feat.$id.title")"$'\n'"  $(t "feat.$id.desc")"$'\n\n'
+_fmt_help_section() {
+  local heading=$1
+  shift
+  local out=""
+  out+=$(printf '\033[1;36m==> %s\033[0m\n\033[2m──────────────────────────────────────────────────────────\033[0m\n' "$heading")
+  out+=$'\n'
+  local id
+  for id in "$@"; do
+    out+=$(printf '\033[1m• %s\033[0m (\033[36m%s\033[0m)\n  %s\n' "$(t "feat.$id.title")" "$id" "$(t "feat.$id.desc")")
+    out+=$'\n'
   done
-  ui_scroll "$(t help.title)" "$text"
+  printf '%b' "$out"
+}
+
+show_help() {
+  local choice
+  while true; do
+    choice=$(ui_menu "📖 About Neo Options" "Select a category to explore" system \
+      system      "🛡️  System & Security       (Updates, SSH, User, Swap, Firewall, Fail2ban)" \
+      web         "🌐 Web Servers & Domains    (Nginx, Caddy, Apache, Certbot, Sites, Cloudflare)" \
+      db          "🗄️  Databases               (PostgreSQL, MySQL, Redis, DB Wizard)" \
+      containers  "📦 Containers & PaaS        (Docker, Podman, Dokploy PaaS)" \
+      runtimes    "⚙️  Runtimes & Toolchains   (Node, Bun, Go, Python, PHP, FrankenPHP)" \
+      ops         "📊 Ops & Monitoring         (Nightly DB Dumps, Health Audit, Nginx Jails)" \
+      all         "📋 Complete Feature Guide  (All 29 features)" \
+      back        "⬅️  Back to Menu") || return 0
+
+    case "$choice" in
+      system)
+        ui_scroll "🛡️ System & Security" "$(_fmt_help_section "System, Access & Security" system_update timezone hostname swap create_user ssh_harden ufw fail2ban auto_updates)"
+        ;;
+      web)
+        ui_scroll "🌐 Web Servers & Domains" "$(_fmt_help_section "Web Servers & Domains" webserver certbot add_domain cloudflare)"
+        ;;
+      db)
+        ui_scroll "🗄️ Databases" "$(_fmt_help_section "Databases & Caching" postgresql mysql redis create_database)"
+        ;;
+      containers)
+        ui_scroll "📦 Containers & PaaS" "$(_fmt_help_section "Containers & PaaS" docker_runtime podman_runtime dokploy)"
+        ;;
+      runtimes)
+        ui_scroll "⚙️ Runtimes & Toolchains" "$(_fmt_help_section "Runtimes & Development Tools" node_runtime bun_runtime go_runtime python_runtime php_runtime frankenphp)"
+        ;;
+      ops)
+        ui_scroll "📊 Ops & Monitoring" "$(_fmt_help_section "Ops, Monitoring & Reliability" db_backup monitoring nginx_jails)"
+        ;;
+      all)
+        local all_text=""
+        all_text+="$(_fmt_help_section "System, Access & Security" system_update timezone hostname swap create_user ssh_harden ufw fail2ban auto_updates)"$'\n'
+        all_text+="$(_fmt_help_section "Web Servers & Domains" webserver certbot add_domain cloudflare)"$'\n'
+        all_text+="$(_fmt_help_section "Databases & Caching" postgresql mysql redis create_database)"$'\n'
+        all_text+="$(_fmt_help_section "Containers & PaaS" docker_runtime podman_runtime dokploy)"$'\n'
+        all_text+="$(_fmt_help_section "Runtimes & Development Tools" node_runtime bun_runtime go_runtime python_runtime php_runtime frankenphp)"$'\n'
+        all_text+="$(_fmt_help_section "Ops, Monitoring & Reliability" db_backup monitoring nginx_jails)"
+        ui_scroll "📋 Complete Feature Guide" "$all_text"
+        ;;
+      back)
+        return 0
+        ;;
+    esac
+  done
 }
 
 welcome() {
+  printf "\n  \033[1;36m/\\_/\\  \033[0m\n ( \033[1;33mo\033[0m.\033[1;33mo\033[0m )  \033[1;37mNeo\033[0m — \033[1;36mLinux Server Manager\033[0m\n  \033[1;36m> ^ <\033[0m   \033[2mCalm, sturdy, and keeping your VPS purr-fect.\033[0m\n"
   ui_msg "$(t welcome.title)" "$(t welcome.text "$OS_PRETTY" "$MEM_MB" "$CPU_COUNT" "$LOG_FILE")"
 }
 
-manage_menu() {
-  local c out name title
-  title=$(t menu.manage.title)
+site_hub_menu() {
+  local c d
   while true; do
-    c=$(ui_menu "$title" "$(t menu.manage.text)" doctor \
-      doctor         "$(t menu.manage.doctor)" \
-      list_sites     "$(t menu.manage.list_sites)" \
-      remove_domain  "$(t menu.manage.remove_domain)" \
-      list_databases "$(t menu.manage.list_databases)" \
-      drop_database  "$(t menu.manage.drop_database)" \
-      back           "$(t menu.manage.back)") || return 0
+    c=$(ui_menu "🌐 Websites" "Manage virtual hosts & SSL" list \
+      list   "📋 List websites" \
+      add    "➕ Add new website (wizard)" \
+      remove "🗑️  Remove website" \
+      back   "⬅️  Back to Hub") || return 0
     case $c in
-      doctor|list_sites|list_databases)
-        out=$( { if [[ $c == doctor ]]; then neo_doctor; else "$c"; fi; } 2>&1 | sed 's/\x1b\[[0-9;]*m//g')
-        ui_scroll "$title" "$out" ;;
-      remove_domain|drop_database)
-        if [[ $c == remove_domain ]]; then out=$(t menu.manage.ask_remove_domain); else out=$(t menu.manage.ask_drop_database); fi
-        name=$(ui_input "$title" "$out" "") || continue
-        [[ -n $name ]] || continue
-        clear
-        "$c" "$name"
-        read -r -p "$(t menu.manage.press_enter)" _ ;;
-      back) return 0 ;;
+      list)
+        list_sites
+        read -r -p "$(t menu.manage.press_enter)" _ || true
+        ;;
+      add)
+        PRESET=domain
+        load_preset "domain"
+        SELECTED_SET=()
+        for id in "${!PRESET_SET[@]}"; do SELECTED_SET[$id]=1; done
+        prompt_features
+        review
+        run_features
+        summary
+        return 0
+        ;;
+      remove)
+        d=$(ui_input "$(t manage.confirm_site_title)" "$(t menu.manage.ask_remove_domain)" "") || continue
+        [[ -n $d ]] || continue
+        remove_domain "$d"
+        read -r -p "$(t menu.manage.press_enter)" _ || true
+        ;;
+      back)
+        return 0
+        ;;
     esac
   done
+}
+
+db_hub_menu() {
+  local c n
+  while true; do
+    c=$(ui_menu "🗄️ Databases" "Manage database engines & users" list \
+      list   "📋 List databases" \
+      create "➕ Create database & user" \
+      drop   "🗑️  Drop database (auto-dumps first)" \
+      back   "⬅️  Back to Hub") || return 0
+    case $c in
+      list)
+        list_databases
+        read -r -p "$(t menu.manage.press_enter)" _ || true
+        ;;
+      create)
+        PRESET=database
+        load_preset "database"
+        SELECTED_SET=()
+        for id in "${!PRESET_SET[@]}"; do SELECTED_SET[$id]=1; done
+        prompt_features
+        review
+        run_features
+        summary
+        return 0
+        ;;
+      drop)
+        n=$(ui_input "$(t manage.db_confirm_title)" "$(t menu.manage.ask_drop_database)" "") || continue
+        [[ -n $n ]] || continue
+        drop_database "$n"
+        read -r -p "$(t menu.manage.press_enter)" _ || true
+        ;;
+      back)
+        return 0
+        ;;
+    esac
+  done
+}
+
+dokploy_hub_menu() {
+  local c
+  while true; do
+    c=$(ui_menu "🚀 Dokploy PaaS" "Manage Dokploy on Docker Swarm" status \
+      status "📊 Inspect Dokploy services" \
+      setup  "🛠️  Deploy Dokploy stack (port 3000)" \
+      update "🔄 Update Dokploy container" \
+      back   "⬅️  Back to Hub") || return 0
+    case $c in
+      status)
+        echo "== Dokploy Services =="
+        if command -v docker >/dev/null 2>&1; then
+          docker service ls --filter "name=dokploy" 2>/dev/null || true
+          docker ps --filter "name=dokploy" 2>/dev/null || true
+        else
+          echo "Docker is not installed."
+        fi
+        read -r -p "$(t menu.manage.press_enter)" _ || true
+        ;;
+      setup)
+        PRESET=dokploy
+        load_preset "dokploy"
+        SELECTED_SET=()
+        for id in "${!PRESET_SET[@]}"; do SELECTED_SET[$id]=1; done
+        prompt_features
+        review
+        run_features
+        summary
+        return 0
+        ;;
+      update)
+        if (( DRY_RUN )); then
+          log_dry "curl -sSL https://dokploy.com/install.sh | sh -s update"
+        else
+          run_sh "curl -sSL https://dokploy.com/install.sh | sh -s update"
+        fi
+        read -r -p "$(t menu.manage.press_enter)" _ || true
+        ;;
+      back)
+        return 0
+        ;;
+    esac
+  done
+}
+
+hub_menu() {
+  printf "\n  \033[1;36m/\\_/\\  \033[0m\n ( \033[1;33mo\033[0m.\033[1;33mo\033[0m )  \033[1;37mNeo\033[0m — \033[1;36mLinux Server Manager\033[0m\n  \033[1;36m> ^ <\033[0m   \033[2mCalm, sturdy, and keeping your VPS purr-fect.\033[0m\n"
+  local choice
+  while true; do
+    choice=$(ui_menu "🐱 Neo Hub" "Server management and control center" doctor \
+      doctor         "🩺 Server Doctor       (Health & security audit)" \
+      status         "📊 Server Status       (Live CPU, RAM, disk & services)" \
+      sites          "🌐 Websites            (List, add, or remove sites)" \
+      databases      "🗄️  Databases           (PostgreSQL, MySQL / MariaDB)" \
+      dokploy        "🚀 Dokploy PaaS        (Deploy, inspect, or update Dokploy)" \
+      setup          "🛠️  Server Setup        (Fresh VPS provisioning wizard)" \
+      cloudflare     "☁️  Cloudflare          (Restore real visitor IPs)" \
+      update         "🔄 Update Neo          (Check for latest release)" \
+      uninstall      "🗑️  Uninstall           (Safely roll back Neo configs)" \
+      quit           "🚪 Quit") || quit_cancel
+    case $choice in
+      doctor)
+        neo_doctor
+        read -r -p "$(t menu.manage.press_enter)" _ || true
+        ;;
+      status)
+        neo_status
+        read -r -p "$(t menu.manage.press_enter)" _ || true
+        ;;
+      sites)
+        site_hub_menu
+        ;;
+      databases)
+        db_hub_menu
+        ;;
+      dokploy)
+        dokploy_hub_menu
+        ;;
+      setup)
+        interactive_setup
+        return 0
+        ;;
+      cloudflare)
+        PRESET=cloudflare
+        load_preset "cloudflare"
+        SELECTED_SET=()
+        for id in "${!PRESET_SET[@]}"; do SELECTED_SET[$id]=1; done
+        prompt_features
+        review
+        run_features
+        summary
+        return 0
+        ;;
+      update)
+        self_update
+        read -r -p "$(t menu.manage.press_enter)" _ || true
+        ;;
+      uninstall)
+        bash "$ROOT_DIR/lib/uninstall.sh"
+        return 0
+        ;;
+      quit)
+        quit_cancel
+        ;;
+    esac
+  done
+}
+
+interactive_setup() {
+  welcome
+  select_preset
+  select_features
+  prompt_features
+  review
+  run_features
+  summary
 }
 
 select_preset() {
@@ -551,13 +775,7 @@ execute_cmd() {
       load_modules
       detect_hw
       check_environment
-      welcome
-      select_preset
-      select_features
-      prompt_features
-      review
-      run_features
-      summary
+      hub_menu
       ;;
     setup)
       if (( ASSUME_YES )) && [[ -z $PRESET ]]; then die "$(t err.yes_preset)"; fi
@@ -568,28 +786,22 @@ execute_cmd() {
       detect_hw
       check_environment
       if [[ -z $PRESET ]]; then
-        welcome
-        select_preset
-        select_features
+        interactive_setup
       else
         load_preset "$PRESET"
         SELECTED_SET=()
         for id in "${!PRESET_SET[@]}"; do SELECTED_SET[$id]=1; done
+        prompt_features
+        (( ! ASSUME_YES )) && review
+        run_features
+        summary
       fi
-      prompt_features
-      (( ! ASSUME_YES )) && review
-      run_features
-      summary
       ;;
     doctor)
       neo_doctor
       ;;
     status)
-      if [[ -x /usr/local/bin/neo-health ]]; then
-        exec /usr/local/bin/neo-health
-      else
-        neo_doctor
-      fi
+      neo_status
       ;;
     cloudflare)
       PRESET=cloudflare
